@@ -26,29 +26,28 @@ module voc_mod
 
 contains
 
-subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,hour
-             ncols,nrows,lat,long,                         & !dimensions, latitude, longitude coordinates
-             temp,rad,wind,pres,qv,                        & !air temperature [ºK], Photosynt. Phton Flx Dnsty [W m-2], Wind spd. [m/s], Press [Pa], Humdty [m3/m3]
-             laip, laic,                                   &
-             ctf, efmaps, ldf_in,                          & !lai,emis factors, light emis factors
-             lsm,soil_type,soil_moisture,                  & !land surface model, soil type, soil_moisture
-             tmp_max, tmp_min, wind_max, tmp_avg, ppfd_avg, & !meteo daily
-             non_dimgarma,flower_flag,litter_flag) !emis                           ) !out: Emision values
+subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hour
+             ncols,nrows,long,lat,                        & !dimensions, latitude, longitude coordinates
+             temp,rad,wind,pres,qv,                       & !air temperature [ºK], Photosynt. Phton Flx Dnsty [W m-2], Wind spd. [m/s], Press [Pa], Humdty [m3/m3]
+             laip, laic,                                  &
+             ctf, ldf_in,                                    & !lai,emis factors, light emis factors
+             tmp_max, tmp_min, wind_max, tmp24_avg, tmp240_avg,ppfd_avg, & !meteo daily
+             non_dimgarma,flower_flag,litter_flag,fillvalue) !emis                           ) !out: Emision values
+             !ctf, efmaps, ldf_in,                          & !lai,emis factors, light emis factors
 
     implicit none
     ! input variables
     integer, intent(in)                           :: yyyy, ddd, hh           ! year, jday, hour
     integer, intent(in)                           :: ncols, nrows!, layers    !dims x,y
-    real,    intent(in), dimension(ncols,nrows)   :: lat, long, temp, rad, wind, pres, qv, laip,laic
-    real,    intent(in), dimension(ncols,nrows)   :: tmp_avg,ppfd_avg,tmp_min,tmp_max,wind_max
+    real,    intent(in), dimension(ncols)         :: long
+    real,    intent(in), dimension(nrows)         :: lat
+    real,    intent(in), dimension(ncols,nrows)   :: temp, rad, wind, pres, qv, laip,laic
+    real,    intent(in), dimension(ncols,nrows)   :: tmp24_avg,tmp240_avg,ppfd_avg,tmp_min,tmp_max,wind_max
 
     real,    intent(in)     :: ctf(ncols,nrows,nrtyp) !canopy type factor array
-    real,    intent(in)     :: efmaps(ncols,nrows,19) !only 19
+    real,    intent(in)     :: fillvalue
+    !real,    intent(in)     :: efmaps(ncols,nrows,19) !only 19
     real,    intent(in)     :: ldf_in(ncols,nrows,4 ) !only 4 use maps
-
-    character(len=4),intent(in)   :: LSM          !land surface model 
-    integer, intent(in)     ::  soil_type(ncols,nrows)
-    real,    intent(in)     ::  soil_moisture(ncols,nrows)
     logical, intent(in)     :: flower_flag,litter_flag
 
     ! output variables 
@@ -80,7 +79,7 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
     !@@real,dimension(ncols,nrows,layers) :: sunt,shat,sunp,shap,sunf
 
     !megsea local variables:
-    real,allocatable :: wwlt(:)
+    !real,allocatable :: wwlt(:)
 
     logical, parameter :: gambd_yn  = .false. !.true. !
     logical, parameter :: gamaq_yn  = .false. !.true. !
@@ -115,7 +114,6 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
     real :: laiv=0.
 
  
-    print*,"   > Exec. megan_voc"
 
     ! EA response to canopy temperature/light
     IF ( Layers .EQ. 5 ) THEN
@@ -130,18 +128,18 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
         end do
     ENDIF
 
-    select case (trim(LSM)) !get Land Surface Model - Parameters
-           case ('NOAH' )
-              allocate(wwlt(size(wwlt_noah))); wwlt=wwlt_noah;
-           case ('JN90' )
-              !allocate(wwlt(size(wwlt_jn90))); wwlt=wwlt_jn90;
-              allocate(wwlt(size(WWLT_PX_WRFV4P))); wwlt=WWLT_PX_WRFV4P;
-           case DEFAULT
-              allocate(wwlt(size(WWLT_PX_WRFV3))); wwlt=WWLT_PX_WRFV3;
-    end select
+    !select case (trim(LSM)) !get Land Surface Model - Parameters
+    !       case ('NOAH' )
+    !          allocate(wwlt(size(wwlt_noah))); wwlt=wwlt_noah;
+    !       case ('JN90' )
+    !          !allocate(wwlt(size(wwlt_jn90))); wwlt=wwlt_jn90;
+    !          allocate(wwlt(size(WWLT_PX_WRFV4P))); wwlt=WWLT_PX_WRFV4P;
+    !       case DEFAULT
+    !          allocate(wwlt(size(WWLT_PX_WRFV3))); wwlt=WWLT_PX_WRFV3;
+    !end select
 
-   do j = 1, NROWS
-      do i = 1, NCOLS! preserve stride 1 for output arrays
+   do j = 1, nrows
+      do i = 1, ncols! preserve stride 1 for output arrays
 
         !from megcan -----------
         sunt(:) = temp(i,j) !default values
@@ -150,10 +148,10 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
         shap(:) = rad(i,j )                 
         sunf(:) = 1.0                      
         TotalCT=sum(ctf(i,j,:)) !*0.01                         !if sum of canopy fractions == 0 => no (canopy) vegetation.
-        if (totalCT .gt. 0.0 .AND. LAIc(i,j) .gt. 0.0 ) then   !if some vegetation
+        if (totalCT .gt. 0.0 .AND. LAIc(i,j) .gt. 0.0 .and. temp(i,j) .ne. fillvalue) then   !if some vegetation
 
            ! Convert to "solar hour": 
-           Hour  = real(HH) + long(i,j) / 15.0
+           Hour  = real(HH) + long(i) / 15.0
            if ( hour  .lt. 0.0 ) then
              hour  = hour + 24.0; day  = real(ddd)  - 1
            elseif ( hour  .gt. 24.0 ) then
@@ -165,7 +163,7 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
            Solar    = rad(i,j)/2.25  !solar radiation   [W m-2]                (from meteo)
 
            !(1) calc solar angle
-           zenith      = CalcZenith(day,lat(i,j),hour)
+           zenith      = CalcZenith(day,lat(j),hour)
            SinZenith   = sin(zenith / 57.29578) !57.29578=rad2deg
            Eccentricity= CalcEccentricity(Day)
            Maxsolar    = SinZenith * SolarConstant * Eccentricity
@@ -232,16 +230,12 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
            shap(:) = shade_ppfd_total(:)/ TotalCT 
            sunf(:) = sun_frac_total(:)  / TotalCT 
 
-        else if (totalCT .lt. 0) then
-               print*,"Send ERROR message!"             !Send ERROR message!
-        else   !totalCT == 0
-               !print*,"Default values!"
-        endif
 
         !-----------------------
         !from megsea -----------
         !EA response to Soil Moisture
-        IF ( gamsm_yn )  THEN; gamsm=gamma_sm(soil_type(i,j),soil_moisture(i,j),wwlt(soil_type(i,j)) ); ELSE;  gamsm = 1.0; ENDIF 
+        !IF ( gamsm_yn )  THEN; gamsm=gamma_sm(soil_type(i,j),soil_moisture(i,j),wwlt(soil_type(i,j)) ); ELSE;  gamsm = 1.0; ENDIF 
+        gamsm = 1.0
         ! Emission response to canopy depth
         !cdea(:)=gamma_cd(layers,laic(i,j))  
         cdea(:)=gamma_cd(layers,laiv)  
@@ -256,11 +250,11 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
             IF ( S .EQ. 3 .OR. S .EQ. 4 .OR. S .EQ. 5 .OR. S .EQ. 6 ) THEN
                 LDFMAP = LDF_IN(i,j,S-2) ! only LDF 3, 4, 5, and 6 in file
             ELSE
-               LDFMAP = LDF(S) !For these species,  Read LDF from previous MEGVEA.EXT 
+                LDFMAP = LDF(S) !For these species,  Read LDF from previous MEGVEA.EXT 
             ENDIF
 
             ! EA response to leaf age 
-            gamla = gamma_age(s, laip(i,j), laic(i,j), tmp_avg(i,j))
+            gamla = gamma_age(s, laip(i,j), laic(i,j), tmp24_avg(i,j))
             ! EA response to air quality
             IF ( GAMAQ_YN ) THEN; GAMAQ=GAMMA_AQ(S, AQI_default)   ; ELSE; GAMAQ = 1.0; ENDIF
             ! EA response to high temperature
@@ -274,8 +268,8 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
             SUM2 = 0.0
             do k = 1, layers
               Ea1L = CDEA(K) *                                                                       &
-                     GAMTLD(SunT(k),tmp_avg(i,j),S) * GAMP(SunP(k), ppfd_avg(i,j)) *        SunF(k) + &
-                     GAMTLD(ShaT(k),tmp_avg(i,j),S) * GAMP(ShaP(k), ppfd_avg(i,j)) * (1.0 - SunF(k) )  
+                     GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(SunP(k), ppfd_avg(i,j)) *        SunF(k) + &
+                     GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(ShaP(k), ppfd_avg(i,j)) * (1.0 - SunF(k) )  
               SUM1 = SUM1 + Ea1L * VPGWT(K)
 
               Ea2L = GAMTLI(SunT(k),S) * SunF(k) + GAMTLI(ShaT(k),S) * (1.0-SunF(k))
@@ -287,21 +281,20 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
             ! ... Calculate emission activity factors
             ER = LAIc(i,j) * GAMTP * GAMLA * GAMHW * GAMAQ * GAMHT * GAMLT * GAMSM
             !er_map(i,j) = ER  !debug
+            
+            !if( s .eq. 1 ) then
+            !if (totalCT .gt. 0.0 .AND. &
+            !    temp(i,j) .gt. 299. .AND. &
+            !    LAIc(i,j) .gt. 0.0 ) then   !if some vegetation
+            !print*,GAMTP,GAMLA,temp(i,j),rad(i,j),pres(i,j),qv(i,j)
+            !end if
+            !end if
 
             IF ( S .EQ. 1 ) THEN
                 ER =ER * GAMCO2  ! GAMCO2 only applied to isoprene
             ELSE IF ( S .EQ. 13 ) THEN   
                 ER = ER * GAMBD  ! GAMBD only applied to ethanol and acetaldehyde
             END IF
-
-            !if (.not. ieee_is_finite(ER)) then
-            !    print *,'x-y-s',i,j,s,' is_infinity'
-            !    print *,'SUM1',SUM1
-            !    print *,'SUM2',SUM1
-            !    print *,'LDFMAP',LDFMAP
-       
-            !    print *,'GAMLA',GAMLA
-            !end if
 
             gam_nonleaf = 1.
             ! add flower emission
@@ -324,42 +317,10 @@ subroutine megan_voc (yyyy,ddd,hh,                         & !year,julian day,ho
             END IF
 
         end do  ! End loop of species (S)
+        endif
 
      end do ! NCOLS
   end do ! NROWS
-
-!@!=========!DEBUG
-!@        print*,"creando debug.nc.."
-!@        ierr=nf90_create("debug.nc", NF90_CLOBBER, ncid)
-!@           ! Defino dimensiones
-!@           ierr=nf90_def_dim(ncid, "COL" , ncols , col_dim_id)
-!@           ierr=nf90_def_dim(ncid, "ROW" , nrows , row_dim_id)
-!@           ierr=nf90_def_dim(ncid, "LVL" , layers, lvl_dim_id)
-!@           !Defino variables
-!@           !ierr=nf90_def_var(ncid,'SUNT'  ,NF90_FLOAT,[col_dim_id,row_dim_id,lvl_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'SHAT'  ,NF90_FLOAT,[col_dim_id,row_dim_id,lvl_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'SUNP'  ,NF90_FLOAT,[col_dim_id,row_dim_id,lvl_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'SHAP'  ,NF90_FLOAT,[col_dim_id,row_dim_id,lvl_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'SUNF'  ,NF90_FLOAT,[col_dim_id,row_dim_id,lvl_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'ISLTY' ,NF90_FLOAT,[col_dim_id,row_dim_id], var_id)
-!@           ierr=nf90_def_var(ncid,'GAMSM' ,NF90_FLOAT,[col_dim_id,row_dim_id], var_id)
-!@           ierr=nf90_def_var(ncid,'WILT'  ,NF90_FLOAT,[col_dim_id,row_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'SOILM' ,NF90_FLOAT,[col_dim_id,row_dim_id], var_id)
-!@           !ierr=nf90_def_var(ncid,'LAI'   ,NF90_FLOAT,[col_dim_id,row_dim_id], var_id)
-!@        ierr=nf90_enddef(ncid)
-!@        ierr=nf90_open("debug.nc", NF90_WRITE, ncid )
-!@           !ierr=nf90_inq_varid(ncid,'SUNT'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  SUNT   )
-!@           !ierr=nf90_inq_varid(ncid,'SHAT'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  SHAT   )
-!@           !ierr=nf90_inq_varid(ncid,'SUNP'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  SUNP   )
-!@           !ierr=nf90_inq_varid(ncid,'SHAP'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  SHAP   )
-!@           !ierr=nf90_inq_varid(ncid,'SUNF'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  SUNF   )
-!@           !ierr=nf90_inq_varid(ncid,'ISLTY'  ,var_id  );ierr=nf90_put_var(ncid, var_id , soil_type)
-!@           !ierr=nf90_inq_varid(ncid,'SOILM'  ,var_id  );ierr=nf90_put_var(ncid, var_id , soil_moisture)
-!@           !ierr=nf90_inq_varid(ncid,'LAI'    ,var_id  );ierr=nf90_put_var(ncid, var_id , laic     )
-!@           ierr=nf90_inq_varid(ncid,'GAMSM'  ,var_id  );ierr=nf90_put_var(ncid, var_id , gamsm_map)
-!@           ierr=nf90_inq_varid(ncid,'WILT'   ,var_id  );ierr=nf90_put_var(ncid, var_id ,  wilt_map)
-!@        ierr=nf90_close(ncid)
-!@!=====================================
 
   return
     
@@ -412,13 +373,13 @@ contains
     !----------------------------------------------------------------
     ! EA Temperature response (light dependent emission)
     !----------------------------------------------------------------
-    FUNCTION GAMTLD(T1,T24,S)
+    FUNCTION GAMTLD(T1,T24,T240,S)
         IMPLICIT NONE
         REAL,PARAMETER :: Ct2 = 230
         INTEGER        :: S
         REAL           :: T1,T24,T240,Topt, X, Eopt, GAMTLD
 
-        T240 = T24
+        !T240 = T24
 
         IF (T1 < 260.0) THEN
             GAMTLD = 0.0
