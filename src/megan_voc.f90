@@ -245,7 +245,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
         if ( gamco2_yn ) then; gamco2=gamma_co2(co2)          ; else; gamco2 = 1.0; endif
 
         do s=1,NCLASS ! Loop over all the emission classes
-
+            if (s .ne. 8) then
             ! Light Dependent Emission Factors (LDF)
             IF ( S .EQ. 3 .OR. S .EQ. 4 .OR. S .EQ. 5 .OR. S .EQ. 6 ) THEN
                 LDFMAP = LDF_IN(i,j,S-2) ! only LDF 3, 4, 5, and 6 in file
@@ -268,8 +268,8 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             SUM2 = 0.0
             do k = 1, layers
               Ea1L = CDEA(K) *                                                                       &
-                     GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(SunP(k), ppfd_avg(i,j)) *        SunF(k) + &
-                     GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(ShaP(k), ppfd_avg(i,j)) * (1.0 - SunF(k) )  
+                     (GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(SunP(k), ppfd_avg(i,j)) *        SunF(k) + &
+                     GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(ShaP(k), ppfd_avg(i,j)) * (1.0 - SunF(k) ))
               SUM1 = SUM1 + Ea1L * VPGWT(K)
 
               Ea2L = GAMTLI(SunT(k),S) * SunF(k) + GAMTLI(ShaT(k),S) * (1.0-SunF(k))
@@ -277,10 +277,13 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             end do ! end do canopy layers
 
             GAMTP = SUM1*LDFMAP + SUM2*( 1.0-LDFMAP )
-
             ! ... Calculate emission activity factors
             ER = LAIc(i,j) * GAMTP * GAMLA * GAMHW * GAMAQ * GAMHT * GAMLT * GAMSM
             !er_map(i,j) = ER  !debug
+            !if (S .eq. 3 .and. rad(i,j) .gt. 800. .and. temp(i,j) .gt. 303)then
+            ! print*,temp(i,j),SunT(1),rad(i,j),SunP(1),ShaP(1),pres(i,j),qv(i,j)
+            ! print*,ER,GAMTP,SUM1,SUM2,LDFMAP
+            !end if
             
             !if( s .eq. 1 ) then
             !if (totalCT .gt. 0.0 .AND. &
@@ -315,7 +318,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             ELSE                  
                 non_dimgarma(i,j,s) = 0.0
             END IF
-
+            end if !s .ne. 8
         end do  ! End loop of species (S)
         endif
 
@@ -416,7 +419,7 @@ contains
             Alpha  = 0.004
             C1 = 0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD24 ** 0.6)
             !C1 = 1.03
-!0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD24 ** 0.6)
+            !0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD24 ** 0.6)
             GAMP= (Alpha * C1 * PPFD1) / SQRT(1.0 + Alpha**2 * PPFD1**2)
         ENDIF
     end function gamp
