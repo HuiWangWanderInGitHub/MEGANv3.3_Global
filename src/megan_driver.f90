@@ -7,6 +7,7 @@ program main
    use netcdf   
    use datetime_module, only: datetime, timedelta, strptime!, secondsSinceEpoch
    use voc_mod   !megan module: (megan_voc)
+   use co2_reader
    !use nox_mod   !megan module: (megan_nox)
    !use bdsnp    !megan module: (bdsnp_nox)
    
@@ -76,15 +77,23 @@ program main
    character(256)    :: lai_files     !global lai files
    character(256)    :: pft_files     !global pft file
    character(256)    :: ef_file       !emission factor file
+   character(256)    :: co2_file       !emission factor file
    !flower and litter emission flag; Hui Wang
    logical           :: run_flower=.false., run_litter=.false.
+   logical           :: run_co2   =.false.
    logical           :: real_spinup_met=.false., output_ef_file=.false.
+   logical           :: output_gamma=.false.
+   integer           :: run_flower_flag,run_litter_flag,run_co2_flag
+   integer           :: real_spinup_met_flag,output_ef_file_flag,output_gamma_flag
 
    character(3)      :: nlai='12'
    real              :: lai_scale_factor=0.1
    integer           :: ilen,nlat,nlon,ntime
+   integer, allocatable :: co2_year(:), co2_month(:)
+   real,    allocatable :: co2_avg(:)
+   integer              :: co2_nrows
+   real                 :: co2_value=420.
    !region defined parameters
-   !integer           :: x0,y0,ncolsin,nrowsin
    !mpi related
    integer :: ierr, rank, nprocs
    integer :: istart,iend
@@ -94,8 +103,8 @@ program main
                      met_file_path,lai_file_path,pft_file_path,&
                      ef_file_path,output_path,&
                      met_files, pft_files, ef_file, lai_files,&
-                     nlai,lai_scale_factor,&
-                     run_flower, run_litter,real_spinup_met,output_ef_file
+                     nlai,lai_scale_factor,run_co2,co2_file,&
+                     run_flower, run_litter,real_spinup_met,output_ef_file,output_gamma
 
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
@@ -114,6 +123,12 @@ program main
    read(*,nml=megan_nl, iostat=iostat)
    !reading prep_megan namelist
    !read(*,nml=windowdefs, iostat=iostat)
+   run_flower_flag      = flag2int(run_flower)
+   run_litter_flag      = flag2int(run_litter)
+   real_spinup_met_flag = flag2int(real_spinup_met)
+   output_ef_file_flag  = flag2int(output_ef_file)
+   run_co2_flag         = flag2int(run_co2)
+   output_gamma_flag    = flag2int(output_gamma)
 
    if( iostat /= 0 ) then
      call safe_mpi_exit("megan: failed to read namelist",iostat)
@@ -130,7 +145,11 @@ program main
    met_file =update_filename(met_files,met_file_path, yyyy, mm )
    write(*,'(A, A)') "Reading: ", trim(met_file)
    call get_grid(met_file,nlat,nlon,lat,lon)
-
+       !read co2 file
+       if(run_co2_flag == 1)then
+       call read_co2_csv(co2_file, co2_year, co2_month,&
+                         co2_avg, co2_nrows)
+       end if
    end if!rank ==0
 
    !broadcast the information from the inputs
@@ -141,10 +160,26 @@ program main
    call MPI_Bcast(nlon,    1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
    call MPI_Bcast(nlat,    1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
    call MPI_Bcast(lai_num, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(run_flower_flag, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(run_litter_flag, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(run_co2_flag, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(real_spinup_met_flag, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(output_ef_file_flag,  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(output_gamma_flag,  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
    if (.not. allocated(lat)  ) allocate(lat(nlat))
    if (.not. allocated(lon)  ) allocate(lon(nlon))
    call MPI_Bcast(lat, nlat, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
    call MPI_Bcast(lon, nlon, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
+   if(run_co2_flag == 1)then
+      call MPI_Bcast(co2_nrows,    1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      if (.not. allocated(co2_year)  )  allocate(co2_year(co2_nrows))
+      if (.not. allocated(co2_month)  ) allocate(co2_month(co2_nrows))
+      if (.not. allocated(co2_avg)  )   allocate(co2_avg(co2_nrows))
+      call MPI_Bcast(co2_year, co2_nrows, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(co2_month, co2_nrows, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(co2_avg, co2_nrows, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
+   end if 
+
 
    !================================================================
    !==========================Domain divided =======================
@@ -217,7 +252,7 @@ program main
    t_240          =1
    t_total        =1!total time step
    !====================================================
-   !if(real_spinup_met) then
+   if(real_spinup_met_flag .eq. 1) then
    call initiate_averaged_data(met_file,pmet_file,&
                                 ilen,nlat,nlon,current_date_s,&
                                 temp24,ppfd24,wind24,&
@@ -225,33 +260,34 @@ program main
                                 temp_max,temp_min,wind_max,&
                                 temp24_avg,temp240_avg,&
                                 ppfd24_avg,ppfd240_avg,FillValue)
-   !else
-   !      temp24(:,:,:)  =288.0 !15deg Celsius (!CHECK VALUES!)
-   !      ppfd24(:,:,:)  =400.  !              (!CHECK VALUES!)
-   !      temp240(:,:,:) =288.0 !15deg Celsius (!CHECK VALUES!)
-   !      ppfd240(:,:,:) =400.  !              (!CHECK VALUES!)
-   !      wind24(:,:,:)  =2.0   !              (!CHECK VALUES!)
-   !      do i=1,ilen
-   !      do j=1,nlat
-   !      temp_min(i,j)      = minval(temp24(i,j,:))
-   !      temp_max(i,j)      = maxval(temp24(i,j,:))
-   !      wind_max(i,j)      = maxval(wind24(i,j,:))
-   !      temp24_avg(i,j)    = sum(temp24(i,j,:))/24.
-   !      ppfd24_avg(i,j)    = sum(ppfd24(i,j,:))/24.
-   !      temp240_avg(i,j)   = sum(temp240(i,j,:))/240. !time_len
-   !      ppfd240_avg(i,j)   = sum(ppfd240(i,j,:))/240. !time_len
-   !      end do
-   !      end do
+   else
+         temp24(:,:,:)  =288.0 !15deg Celsius (!CHECK VALUES!)
+         ppfd24(:,:,:)  =400.  !              (!CHECK VALUES!)
+         temp240(:,:,:) =288.0 !15deg Celsius (!CHECK VALUES!)
+         ppfd240(:,:,:) =400.  !              (!CHECK VALUES!)
+         wind24(:,:,:)  =2.0   !              (!CHECK VALUES!)
+         do i=1,ilen
+         do j=1,nlat
+         temp_min(i,j)      = minval(temp24(i,j,:))
+         temp_max(i,j)      = maxval(temp24(i,j,:))
+         wind_max(i,j)      = maxval(wind24(i,j,:))
+         temp24_avg(i,j)    = sum(temp24(i,j,:))/24.
+         ppfd24_avg(i,j)    = sum(ppfd24(i,j,:))/24.
+         temp240_avg(i,j)   = sum(temp240(i,j,:))/240. !time_len
+         ppfd240_avg(i,j)   = sum(ppfd240(i,j,:))/240. !time_len
+         end do
+         end do
 
-   !end if
+   end if
    call get_pft_data(pft_file_path,pft_files,&
                      nlat,nlon,ilen,ctf,yyyy)
    call get_ef_data(ef_file_path,ef_file,&
                      nlat,nlon,ilen,ctf(:,:,4:7),ef,ldf_in)
-   if(output_ef_file)then
-   if(rank == 0) then
-      out_file = trim(output_path)//"/"//"Gridded_MEGAN_EF_" // yyyy // ".nc"
-      call create_output_ef_file(out_file,nlat,nlon,lat,lon)
+   if(output_ef_file_flag .eq. 1)then
+         if(rank == 0) then
+            out_file = trim(output_path)//"/"//"Gridded_MEGAN_EF_" // yyyy // ".nc"
+            call create_output_ef_file(out_file,nlat,nlon,lat,lon)
+         end if
          do k = 1, nclass
          call gather_output_2d(out_file,"EF_"//trim(mgn_spc(k)),ef(:,:,k),&
                             ilen,  nlat,  &
@@ -263,6 +299,11 @@ program main
                             nlon, rank, nprocs)
          end do
    end if
+   if(run_co2_flag == 1)then
+   co2_value=get_co2(co2_year, co2_month, co2_avg, atoi(yyyy), atoi(mm))
+       if(rank ==0) then
+       print*,rank,"CO2 concentration is ",co2_value
+       end if
    end if
    !====================================================
    call get_lai_data(lai_file_path,lai_files,&
@@ -278,6 +319,13 @@ program main
             pmet_file=met_file
             met_file=update_filename(met_files,met_file_path,yyyy,mm)
             call get_times_parallel(met_file,times)
+            !update_co2_value
+            if(run_co2_flag == 1)then
+            co2_value=get_co2(co2_year, co2_month, co2_avg, atoi(yyyy), atoi(mm))
+            if(rank ==0) then
+            print*,"CO2 concentration is ",co2_value
+            end if
+            end if
       end if
       !update the lai file
       if (current_year .ne. yyyy) then
@@ -323,14 +371,17 @@ program main
              temp,ppfd,                                  & !Tmp.[ºK], PPFD [umol m-2 s-1]
              wind,pres,rh,                               & !Wind spd.[m/s], Press.[Pa], Humdty.[%]
              lai(:,:,laip_idx), lai(:,:,laic_idx),       & !LAI (past) [1], LAI (current) [1]
-             ctf(:,:,1:6), ldf_in,                          & !Canopy type frac. [1],
+             ctf(:,:,1:6), ldf_in,                       & !Canopy type frac. [1],
              temp_max,temp_min,wind_max,                 & !max temp, min temp, max wind
-             temp24_avg,temp240_avg,ppfd24_avg,                      & !daily avg of temp & ppfd
+             temp24_avg,temp240_avg,ppfd24_avg,          & !daily avg of temp & ppfd
              out_buffer,                                 &
-             run_flower,run_litter, FillValue                  ) 
+             run_flower_flag,run_litter_flag, run_co2_flag, co2_value,FillValue                  ) 
 
-      
+      if(output_gamma_flag == 1)then 
+      out_buffer_emis(:,:,t_24,:) = out_buffer!*ef
+      else
       out_buffer_emis(:,:,t_24,:) = out_buffer*ef
+      end if
       !==========test=================
       !out_buffer_emis(:,:,t_24,1) = temp
       !out_buffer_emis(:,:,t_24,2) = temp24_avg
@@ -379,12 +430,12 @@ program main
          out_file = trim(output_path)//"/"//"Global_emis_MEGAN_" // yyyy // "-" // mm // "-" // dd // ".nc"
          if (rank .eq. 0)then
          cur_format_date = yyyy // "-" // mm // "-" // dd
-         call create_output_file(out_file,cur_format_date,nlat,nlon,lat,lon)
+         call create_output_file(out_file,cur_format_date,nlat,nlon,lat,lon,output_gamma_flag)
          end if 
          do k = 1, nclass
          call gather_output_3d(out_file,trim(mgn_spc(k)),out_buffer_emis(:,:,:,k),&
                             ilen,  nlat, 24, &
-                            nlon, rank, nprocs)
+                            nlon, rank, nprocs,output_gamma_flag)
          end do 
          out_buffer_emis=0.0
       endif    
@@ -475,6 +526,16 @@ contains
         atoi = 0
     end if
    end function atoi 
+   integer function flag2int(logic_flag)
+    implicit none
+    logical, intent(in) :: logic_flag
+    if (logic_flag) then
+        flag2int = 1
+    else
+        flag2int = 0
+    end if
+    
+   end function flag2int 
    character(len=20) function itoa(i)       !int -> string
       implicit none
       integer, intent(in) :: i
@@ -720,7 +781,6 @@ contains
      end do
    
      ! Local output (each process)
-   
      if (rank == 0) t_start = MPI_Wtime()
      if (rank == 0) then
        allocate( data_all(nlon, nlat))
@@ -1253,14 +1313,14 @@ contains
      end do
 
      ef_file=trim(ef_path)//'/'//trim(ef_file_prefix)
-     write(*,'(A, A)') "Reading: ", trim(ef_file)
+     !write(*,'(A, A)') "Reading EF file: ", trim(ef_file)
      if (rank == 0) then
         inquire(file=ef_file, exist=file_exists)
         if (.not. file_exists) then
            write(*, '(A, A)') "File missing: ", trim(ef_file)
            call safe_mpi_exit("EF file error", 0)
         else
-           write(*, '(A, A)') "Reading: ", trim(ef_file)
+           write(*, '(A, A)') "Reading EF file: ", trim(ef_file)
         end if
      end if
      
@@ -1469,12 +1529,13 @@ contains
    end subroutine create_output_ef_file
 
    !OUTPUT ----------------------------------------------------------------
-   subroutine create_output_file(out_file,current_date,nlat,nlon,lat,lon)
+   subroutine create_output_file(out_file,current_date,nlat,nlon,lat,lon,output_gamma_flag)
      implicit none
      character(len=*), intent(in) :: out_file
      character(len=*), intent(in) :: current_date
      integer,          intent(in) :: nlat, nlon
      real, allocatable,intent(in) :: lat(:),lon(:)
+     integer,          intent(in) :: output_gamma_flag
    
      integer :: ncid, t_dim_id, x_dim_id, y_dim_id, str_dim_id
      integer :: var_id_lat, var_id_lon, var_id_area, var_id_time, k, t
@@ -1512,6 +1573,15 @@ contains
      call check(nf90_put_att(ncid, var_id_time, "standard_name", "time"))
    
      do k = 1, nclass
+       if( output_gamma_flag == 1) then
+       call check(nf90_def_var(ncid, trim(mgn_spc(k))//"_GAMMA", nf90_short, &
+                               [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
+       call check(nf90_put_att(ncid, var_id_mech(k), "units", "unit_less"))
+       call check(nf90_put_att(ncid, var_id_mech(k), "scale_factor", 0.01))
+       call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", 0))
+       call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
+                               trim(mgn_spc(k))//" gamma value"))
+       else
        call check(nf90_def_var(ncid, trim(mgn_spc(k)), nf90_float, &
                                [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
        call check(nf90_put_att(ncid, var_id_mech(k), "units", "nmole m-2 s-1"))
@@ -1519,6 +1589,7 @@ contains
        call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", FillValue))
        call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
                                trim(mgn_spc(k))//" emission rate"))
+       end if
      end do
    
      call check(nf90_enddef(ncid))
@@ -1526,7 +1597,6 @@ contains
      ! write data directly (no reopening)
      call check(nf90_put_var(ncid, var_id_lat,  lat))
      call check(nf90_put_var(ncid, var_id_lon,  lon))
-     !call check(nf90_put_var(ncid, var_id_area, cell_area))
      call check(nf90_put_var(ncid, var_id_time, [(3600*(k-1), k=1,24)]))
    
      call check(nf90_close(ncid))
@@ -1608,7 +1678,7 @@ contains
 !==========================================================
    subroutine gather_output_3d(out_file,var_name,temp_in,&
                             ilen, nlat, nt, &
-                            nlon_total, rank, nprocs)
+                            nlon_total, rank, nprocs, output_gamma_flag)
       implicit none
 
       character(len=*), intent(in) :: out_file
@@ -1617,11 +1687,13 @@ contains
       integer,          intent(in) :: ilen!, istart
       integer,          intent(in) :: nlat, nt, nlon_total
       integer,          intent(in) :: rank, nprocs
+      integer,          intent(in) :: output_gamma_flag 
 
       ! gather buffers
       real,    allocatable :: sendbuf(:), recvbuf(:), temp_global(:,:,:)
       real,    allocatable :: temp_local(:,:,:),temp_reordered(:,:,:)
       integer, allocatable :: recvcounts(:), displs(:)
+      integer(kind=2),  allocatable :: temp_global_int(:,:,:)
       integer :: ierr,sendcount
       integer :: ncid, varid
       integer :: total_recv, expected
@@ -1691,10 +1763,20 @@ contains
               end do
               end do
         end do
+        if(output_gamma_flag == 1)then
+        if(.not. allocated(temp_global_int)) allocate(temp_global_int(nlon_total,nlat,nt))
+        temp_global_int = int(temp_global*100., kind=2) 
+        call check(nf90_open(trim(out_file), nf90_write, ncid ))
+        call check(nf90_inq_varid(ncid,var_name//"_GAMMA",varid))
+        call check(nf90_put_var(ncid, varid, temp_global_int, start=[1, 1, 1], count=[nlon_total, nlat, nt]))
+        call check(nf90_close(ncid))
+        deallocate(temp_global_int)
+        else
         call check(nf90_open(trim(out_file), nf90_write, ncid ))
         call check(nf90_inq_varid(ncid,var_name,varid))
         call check(nf90_put_var(ncid, varid, temp_global, start=[1, 1, 1], count=[nlon_total, nlat, nt]))
         call check(nf90_close(ncid))
+        end if
         deallocate(    recvbuf)
         deallocate(temp_global)
       end if

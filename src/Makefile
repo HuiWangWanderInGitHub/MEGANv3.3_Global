@@ -3,11 +3,11 @@
 FC  =mpif90
 #parallel-netcdf
 #casper
-NETCDF= /glade/u/apps/casper/24.12/spack/opt/spack/netcdf/4.9.2/oneapi/2024.2.1/hkzu
+#NETCDF= /glade/u/apps/casper/24.12/spack/opt/spack/netcdf/4.9.2/oneapi/2024.2.1/hkzu
+#MPIPATH = /glade/u/apps/casper/24.12/spack/opt/spack/openmpi/5.0.6/oneapi/2024.2.1/ptm3
 #derecho
-#NETCDF= /glade/u/apps/derecho/24.12/spack/opt/spack/netcdf/4.9.2/oneapi/2024.2.1/uao5/
-MPIPATH = /glade/u/apps/casper/24.12/spack/opt/spack/openmpi/5.0.6/oneapi/2024.2.1/ptm3
-#/glade/u/apps/casper/24.12/spack/opt/spack/netcdf/4.9.2/openmpi/5.0.6/oneapi/2024.2.1/tlt6
+NETCDF= /glade/u/apps/derecho/24.12/spack/opt/spack/netcdf/4.9.2/oneapi/2024.2.1/uao5/
+MPIPATH = /glade/u/apps/casper/24.12/spack/opt/spack/netcdf/4.9.2/openmpi/5.0.6/oneapi/2024.2.1/tlt6
 NETCDF_LIB = ${NETCDF}/lib
 NETCDF_INC = ${NETCDF}/include
 
@@ -18,11 +18,11 @@ INC =-I${NETCDF_INC} -I${MPIPATH}/include
 #LDFLAGS=-O2
 DEBUG = -g -traceback# -check all -fpe0 -O0
 #DEBUG = -g -check all -traceback -O0
-FCFLAGS= $(DEBUG) -O3  -extend-source #-Wunused #-Wall 
+FCFLAGS= $(DEBUG) -heap-arrays -O3  -extend-source #-Wunused #-Wall 
 LDFLAGS= $(DEBUG) 
 
 #OBJS= datetime_module.o megan_voc.o megan_nox.o megan_driver.o #bdsnp.o
-OBJS= datetime_module.o megan_voc.o  megan_driver.o #bdsnp.o
+OBJS= datetime_module.o megan_voc.o read_co2.o  megan_driver.o #bdsnp.o
 EXE =../exe/megan_v3.3.exe
 
 $(EXE): $(OBJS)
