@@ -1,4 +1,4 @@
-# Global Version Model of Emissions of Gases and Aerosols from Nature (MEGAN)
+# Global Version Model of Emissions of Gases and Aerosols from Nature (Global-MEGAN)
 
 > `megan` is a model used to estimate biogenic VOCs emissions, it has been developing by Alex Guenther and his group. This is a new version of MEGAN developed by Dr. Hui Wang for global biogenic reactive gases simulations based on Ram's code.
 
