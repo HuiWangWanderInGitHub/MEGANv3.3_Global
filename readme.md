@@ -1,11 +1,12 @@
-# Model of Emissions of Gases and Aerosols from Nature (MEGANv3.3)
+# Global Version Model of Emissions of Gases and Aerosols from Nature (MEGAN)
 
-> `megan` is a model used to estimate biogenic VOCs emissions, it has been developed by Alex Guenther and his group. 
+> `megan` is a model used to estimate biogenic VOCs emissions, it has been developing by Alex Guenther and his group. This is a new version of MEGAN developed by Dr. Hui Wang for global biogenic reactive gases simulations.
 
 ## Dependencies:
 
-+  Fortran GNU compiler
++  Fortran compiler
 +  NetCDF library
++  MPI library
 
 > &#9888; At this moment it only works on UNIX/Linux O.S. 
 
@@ -14,8 +15,8 @@
 In order to run megan you will need meteorological and land data. 
 
 Data required:
-+ WRF output NetCDF file. <!-- with the following variables: 'XLAT', 'XLONG', 'Times', 'MAPFAC_M', 'ISLTYP', 'U10', 'V10', 'T2', 'SWDOWN', 'PSFC', 'Q2', 'RAINNC', 'LAI', 'SMOIS', 'TSLB'. -->
-+ Land, vegetation and soil fields needed to run `prep_megan`. Global data is freely available from [MEGAN GLOBAL DATA](https://drive.google.com/drive/folders/1ZdohMA4f4O_Yd2HttMLjhGpgFbTQMlt0?usp=sharing).
++ ERA5 NetCDF file. <!-- with the following variables: 'XLAT', 'XLONG', 'Times', 'MAPFAC_M', 'ISLTYP', 'U10', 'V10', 'T2', 'SWDOWN', 'PSFC', 'Q2', 'RAINNC', 'LAI', 'SMOIS', 'TSLB'. -->
++ Land vegetation fields needed. This version is driven by the gridded emission factors based on the vegetation species and corresponding emission factors. 
 
 ## Build
 Go to the `src` directory:
@@ -88,14 +89,4 @@ Please feel free to contact the developer if you have any issues or suggestions.
 
 
 ---
-## Planned future improvements:
 
-+ [ ] Portability. 
-  - [ ] Find an alternative to sys calls for `date` function.
-+ [ ] Input/Output. 
-  - [x] Incorporate prep-megan.
-  - [x] Reading multiple meteoroligcal files.
-  - [ ] Support to others meteorological models.
-+ [ ] Science.
-  - [ ] Calculate one gamma per CANTYPE. Then use the corresponding EF for this gamma.
-  - [ ] Implement bdsnp.
