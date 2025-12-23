@@ -20,6 +20,7 @@
 
       INTEGER,PARAMETER :: N_MGN_SPC  = 19
       CHARACTER*16   MGN_SPC(N_MGN_SPC)
+      CHARACTER*16   MGN_DIAG_VAR(N_MGN_SPC)
 
       DATA  MGN_SPC(  1)  / 'ISOP            '/      ! isoprene
       DATA  MGN_SPC(  2)  / 'MBO             '/      ! MBO (2-metil-3-buten-2-ol)
@@ -41,6 +42,25 @@
       DATA  MGN_SPC( 18)  / 'OTHER           '/      ! other VOC (e.g., indole, pentane, methyl bromide)
       DATA  MGN_SPC( 19)  / 'CO              '/      ! carbon monoxide
 
+      DATA  MGN_DIAG_VAR(  1)  / 'GAMMA   '/      ! GAMMA
+      DATA  MGN_DIAG_VAR(  2)  / 'GAMMATP '/      ! 
+      DATA  MGN_DIAG_VAR(  3)  / 'GAMTsun '/      ! 
+      DATA  MGN_DIAG_VAR(  4)  / 'GAMTshd '/      ! 
+      DATA  MGN_DIAG_VAR(  5)  / 'GAMPsun '/      ! 
+      DATA  MGN_DIAG_VAR(  6)  / 'GAMPshd '/      ! 
+      DATA  MGN_DIAG_VAR(  7)  / 'GAMLA   '/      ! 
+      DATA  MGN_DIAG_VAR(  8)  / 'GAMCO2  '/      ! 
+      DATA  MGN_DIAG_VAR(  9)  / 'SunT1   '/      ! 
+      DATA  MGN_DIAG_VAR( 10)  / 'SunT5   '/      ! 
+      DATA  MGN_DIAG_VAR( 11)  / 'ShaT1   '/      ! 
+      DATA  MGN_DIAG_VAR( 12)  / 'ShaT5   '/      ! 
+      DATA  MGN_DIAG_VAR( 13)  / 'TEMP24  '/      ! 
+      DATA  MGN_DIAG_VAR( 14)  / 'TEMP240 '/      ! 
+      DATA  MGN_DIAG_VAR( 15)  / 'PPFDsun '/      ! 
+      DATA  MGN_DIAG_VAR( 16)  / 'PPFDshd '/      ! 
+      DATA  MGN_DIAG_VAR( 17)  / 'PPFD24  '/      ! 
+      DATA  MGN_DIAG_VAR( 18)  / 'PPFD240 '/      ! 
+      DATA  MGN_DIAG_VAR( 19)  / 'LAIc    '/      !
 !=======================================================================
 !  SPCAT_SPC.EXT
 !  MEGAN speciated species and their MW.

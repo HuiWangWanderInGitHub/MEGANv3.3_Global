@@ -23,6 +23,11 @@ LDFLAGS= $(DEBUG)
 
 #OBJS= datetime_module.o megan_voc.o megan_nox.o megan_driver.o #bdsnp.o
 OBJS= datetime_module.o megan_voc.o read_co2.o  megan_driver.o #bdsnp.o
+#EXE =../exe/megan_v3.3.Dcp.exe
+#EXE =../exe/megan_v3.3.Cacp.exe
+#EXE =../exe/megan_v3.3_0705.exe
+#EXE =../exe/megan_v3.3_casper.exe
+#EXE =../exe/megan_v3.3_0724.exe
 EXE =../exe/megan_v3.3.exe
 
 $(EXE): $(OBJS)

@@ -14,7 +14,7 @@ module voc_mod
    !---
    integer, save :: nmgnspc           !number of megan     species
    integer, save :: n_scon_spc        !number of mechanism species
-   character( 16 ), allocatable :: megan_names(:)             ! megan species names
+   character( 16 ), allocatable ::  megan_names(:)             ! megan species names
    integer,         allocatable ::  spmh_map(:),mech_map(:)   ! speciated species name
 
    real,            allocatable :: conv_fac(:)
@@ -28,12 +28,13 @@ contains
 
 subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hour
              ncols,nrows,long,lat,                        & !dimensions, latitude, longitude coordinates
-             temp,rad,wind,pres,qv,                       & !air temperature [ºK], Photosynt. Phton Flx Dnsty [W m-2], Wind spd. [m/s], Press [Pa], Humdty [m3/m3]
+             temp,rad,wind,pres,qv,                       & !air temp[ºK], PPFD [W m-2], WS [m/s], Press [Pa], Humdty [m3/m3]
              laip, laic,                                  &
-             ctf, ldf_in,                                    & !lai,emis factors, light emis factors
-             tmp_max, tmp_min, wind_max, tmp24_avg, tmp240_avg,ppfd_avg, & !meteo daily
-             non_dimgarma,flower_flag,litter_flag,fillvalue) !emis                           ) !out: Emision values
-             !ctf, efmaps, ldf_in,                          & !lai,emis factors, light emis factors
+             ctf, ldf_in,                                 & !lai,emis factors, light emis factors
+             tmp_max, tmp_min, wind_max,                  &
+             tmp24_avg,tmp240_avg,ppfd24_avg,ppfd240_avg, & !meteo daily
+             non_dimgarma,flower_flag,litter_flag,        &
+             co2_flag, co2_value, diagnose_flag,fillvalue) !emis                           ) !out: Emision values
 
     implicit none
     ! input variables
@@ -42,13 +43,16 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     real,    intent(in), dimension(ncols)         :: long
     real,    intent(in), dimension(nrows)         :: lat
     real,    intent(in), dimension(ncols,nrows)   :: temp, rad, wind, pres, qv, laip,laic
-    real,    intent(in), dimension(ncols,nrows)   :: tmp24_avg,tmp240_avg,ppfd_avg,tmp_min,tmp_max,wind_max
+    real,    intent(in), dimension(ncols,nrows)   :: tmp24_avg,tmp240_avg,ppfd24_avg,ppfd240_avg
+    real,    intent(in), dimension(ncols,nrows)   :: tmp_min,tmp_max,wind_max
 
     real,    intent(in)     :: ctf(ncols,nrows,nrtyp) !canopy type factor array
     real,    intent(in)     :: fillvalue
+    real,    intent(in)     :: co2_value
     !real,    intent(in)     :: efmaps(ncols,nrows,19) !only 19
     real,    intent(in)     :: ldf_in(ncols,nrows,4 ) !only 4 use maps
-    logical, intent(in)     :: flower_flag,litter_flag
+    integer, intent(in)     :: flower_flag,litter_flag,co2_flag,diagnose_flag
+   
 
     ! output variables 
     !real   ,intent(inout) :: emis(ncols,nrows,n_spca_spc)
@@ -56,7 +60,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     
     ! local variables
     integer :: s, t, i, j, k ! loop indices
-    integer :: mm, dd
+    integer :: mm, dd, nloop
 
     ! megcan local variables 
     real   :: TotalCT
@@ -87,8 +91,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     logical, parameter :: gamlt_yn  = .false. !.true. !
     logical, parameter :: gamhw_yn  = .false. !.true. !
     logical, parameter :: gamco2_yn = .false. !.true. !
-    logical, parameter :: gamsm_yn  = .false. !.true. ! for the cmaq implementation of megan  we refer to soil moisture at layer 2, 
-                                                      !which is 1 meter for px and 0.5 m for noah. Keep this in mind when enabling the GAMSM stress.
+    logical, parameter :: gamsm_yn  = .false. !.true. !
 
     !megvea local variables
     real  :: ER          ! Emission rate
@@ -164,7 +167,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
 
            !(1) calc solar angle
            zenith      = CalcZenith(day,lat(j),hour)
-           SinZenith   = sin(zenith / 57.29578) !57.29578=rad2deg
+           SinZenith   = max(sin(25/57.29578), sin(zenith / 57.29578)) !57.29578=rad2deg
            Eccentricity= CalcEccentricity(Day)
            Maxsolar    = SinZenith * SolarConstant * Eccentricity
 
@@ -234,7 +237,6 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
         !-----------------------
         !from megsea -----------
         !EA response to Soil Moisture
-        !IF ( gamsm_yn )  THEN; gamsm=gamma_sm(soil_type(i,j),soil_moisture(i,j),wwlt(soil_type(i,j)) ); ELSE;  gamsm = 1.0; ENDIF 
         gamsm = 1.0
         ! Emission response to canopy depth
         !cdea(:)=gamma_cd(layers,laic(i,j))  
@@ -242,9 +244,18 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
         ! EA bidirectional exchange LAI response
         if ( gambd_yn )  then; gambd=gamma_laibidir(laic(i,j)); else;  gambd = 1.0; endif
         ! EA response to co2
-        if ( gamco2_yn ) then; gamco2=gamma_co2(co2)          ; else; gamco2 = 1.0; endif
+        if ( co2_flag == 1 ) then
+        gamco2=gamma_co2(co2_value)
+        else
+        gamco2 = 1.0
+        endif
 
-        do s=1,NCLASS ! Loop over all the emission classes
+        if (diagnose_flag == 1) then
+        nloop = 1
+        else
+        nloop = nclass
+        end if
+        do s=1,nloop ! Loop over all the emission classes
             if (s .ne. 8) then
             ! Light Dependent Emission Factors (LDF)
             IF ( S .EQ. 3 .OR. S .EQ. 4 .OR. S .EQ. 5 .OR. S .EQ. 6 ) THEN
@@ -268,8 +279,10 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             SUM2 = 0.0
             do k = 1, layers
               Ea1L = CDEA(K) *                                                                       &
-                     (GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(SunP(k), ppfd_avg(i,j)) *        SunF(k) + &
-                     GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * GAMP(ShaP(k), ppfd_avg(i,j)) * (1.0 - SunF(k) ))
+                     (GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * &
+                     GAMP(SunP(k), ppfd24_avg(i,j),ppfd240_avg(i,j),1) * SunF(k) + &
+                     GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * &
+                     GAMP(ShaP(k), ppfd24_avg(i,j),ppfd240_avg(i,j),0) * (1.0 - SunF(k) ))
               SUM1 = SUM1 + Ea1L * VPGWT(K)
 
               Ea2L = GAMTLI(SunT(k),S) * SunF(k) + GAMTLI(ShaT(k),S) * (1.0-SunF(k))
@@ -279,19 +292,6 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             GAMTP = SUM1*LDFMAP + SUM2*( 1.0-LDFMAP )
             ! ... Calculate emission activity factors
             ER = LAIc(i,j) * GAMTP * GAMLA * GAMHW * GAMAQ * GAMHT * GAMLT * GAMSM
-            !er_map(i,j) = ER  !debug
-            !if (S .eq. 3 .and. rad(i,j) .gt. 800. .and. temp(i,j) .gt. 303)then
-            ! print*,temp(i,j),SunT(1),rad(i,j),SunP(1),ShaP(1),pres(i,j),qv(i,j)
-            ! print*,ER,GAMTP,SUM1,SUM2,LDFMAP
-            !end if
-            
-            !if( s .eq. 1 ) then
-            !if (totalCT .gt. 0.0 .AND. &
-            !    temp(i,j) .gt. 299. .AND. &
-            !    LAIc(i,j) .gt. 0.0 ) then   !if some vegetation
-            !print*,GAMTP,GAMLA,temp(i,j),rad(i,j),pres(i,j),qv(i,j)
-            !end if
-            !end if
 
             IF ( S .EQ. 1 ) THEN
                 ER =ER * GAMCO2  ! GAMCO2 only applied to isoprene
@@ -301,23 +301,45 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
 
             gam_nonleaf = 1.
             ! add flower emission
-            if (flower_flag) then
+            if (flower_flag .eq. 1) then
                 gam_nonleaf = gam_nonleaf+gamflower
             end if
             ! add litter emission
-            if (litter_flag) then
+            if (litter_flag .eq. 1) then
                 gam_nonleaf = gam_nonleaf+gamlitter
             end if
             er = er * gam_nonleaf
 
 
-
-            !IF ( ER(I,J) .GT. 0.0 ) THEN
-            IF ( ER .GT. 0.0 ) THEN
-                non_dimgarma(i,j,s) = ER
-            ELSE                  
-                non_dimgarma(i,j,s) = 0.0
-            END IF
+            if (diagnose_flag == 1)then
+               non_dimgarma(i,j,1) = ER
+               non_dimgarma(i,j,2) = GAMTP
+               non_dimgarma(i,j,3) = GAMTLD(SunT(1),tmp24_avg(i,j),tmp240_avg(i,j),S)
+               non_dimgarma(i,j,4) = GAMTLD(ShaT(1),tmp24_avg(i,j),tmp240_avg(i,j),S)
+               non_dimgarma(i,j,5) = GAMP(SunP(1), ppfd24_avg(i,j),ppfd240_avg(i,j),1)
+               non_dimgarma(i,j,6) = GAMP(ShaP(1), ppfd24_avg(i,j),ppfd240_avg(i,j),0)
+               non_dimgarma(i,j,7) = GAMLA
+               non_dimgarma(i,j,8) = GAMCO2
+               non_dimgarma(i,j,9) = SunT(1)
+               non_dimgarma(i,j,10) = SunT(5)
+               non_dimgarma(i,j,11) = ShaT(1)
+               non_dimgarma(i,j,12) = ShaT(5)
+               non_dimgarma(i,j,13) = tmp24_avg(i,j)
+               non_dimgarma(i,j,14) = tmp240_avg(i,j)
+               non_dimgarma(i,j,15) = SunP(1)
+               non_dimgarma(i,j,16) = ShaP(1)
+               non_dimgarma(i,j,17) = ppfd24_avg(i,j)
+               non_dimgarma(i,j,18) = ppfd240_avg(i,j)
+               non_dimgarma(i,j,19) = LAIc(i,j)
+       
+            else
+               IF ( ER .GT. 0.0 ) THEN
+                   non_dimgarma(i,j,s) = ER
+               ELSE                  
+                   non_dimgarma(i,j,s) = 0.0
+               END IF
+            end if! diagnose_flag
+            
             end if !s .ne. 8
         end do  ! End loop of species (S)
         endif
@@ -410,16 +432,27 @@ contains
     !----------------------------------------------------------------
     ! EA Light response
     !----------------------------------------------------------------
-    function gamp(ppfd1,ppfd24)
+    function gamp(ppfd1,ppfd24,ppfd240,light_shd)
         implicit none
-        real            :: ppfd1, ppfd24, alpha, c1, gamp
+        real            :: ppfd1, ppfd24,ppfd240, alpha, c1, gamp
+        integer         :: light_shd
         IF (PPFD24 < 0.01) THEN
             GAMP= 0.0
         ELSE
-            Alpha  = 0.004
-            C1 = 0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD24 ** 0.6)
+            !Alpha  = 0.004
+            !-0.0005*log(ppfd240)
+            !C1 = 0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD240** 0.6)
+            !if(light_shd == 1)then
+            !C1 = 0.0468 * EXP(0.0005 * (PPFD24 - 200)) * (PPFD240** 0.6)
+            !else
+            !C1 = 0.0468 * EXP(0.0005 * (PPFD24 - 50)) * (PPFD240** 0.6)
+            !end if
             !C1 = 1.03
-            !0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD24 ** 0.6)
+            !Alpha  = 0.004 - 0.0005*log(ppfd24/2.)
+            !C1 = 0.048 * EXP(0.0005 * (PPFD24/2. - 240))*((PPFD24/2.)**0.6)
+            Alpha  = 0.004 - 0.0003*log(ppfd24/2.)
+            C1 = 0.0468 * EXP(0.0005 * (PPFD24/2. - 200))*((PPFD24/2.)**0.6)
+               
             GAMP= (Alpha * C1 * PPFD1) / SQRT(1.0 + Alpha**2 * PPFD1**2)
         ENDIF
     end function gamp
@@ -761,6 +794,21 @@ SUBROUTINE CanopyRad(Distgauss, Layers, LAI, SinZenith,           &
 
           ShadePPFD(i) = (QdAbsVL + QsAbsVL) * ConvertShadePPFD/(1 - scatV)
           SunPPFD(i) = ShadePPFD(i) + (QbAbsV* ConvertSunPPFD/(1 - scatV))
+          
+          !if(SunPPFD(i) .gt. 2500) then
+          !print*,"QdAbsVL",QdAbsVL
+          !print*,"QsAbsVL",QsAbsVL
+          !print*,"scatV",scatV
+          !print*,"QbAbsV",QbAbsV
+          !print*,"QbAbsN",QbAbsn
+          !print*,"Qbeamv",Qbeamv
+          !print*,"Qbeamn",Qbeamn
+          !print*,"Kb",Kb
+          !print*,"SinZenith",SinZenith
+          !print*,"Cluster",Cluster
+          !!print*,"QdAbsVL",QdAbsVL
+          !stop
+          !end if
           QdAbsV(i) = QdAbsVL
           QsAbsV(i) = QsAbsVL
           QdAbsn(i) = QdAbsNL

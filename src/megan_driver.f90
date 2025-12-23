@@ -82,9 +82,10 @@ program main
    logical           :: run_flower=.false., run_litter=.false.
    logical           :: run_co2   =.false.
    logical           :: real_spinup_met=.false., output_ef_file=.false.
-   logical           :: output_gamma=.false.
+   logical           :: diagnose=.false.,output_gamma=.false.
    integer           :: run_flower_flag,run_litter_flag,run_co2_flag
-   integer           :: real_spinup_met_flag,output_ef_file_flag,output_gamma_flag
+   integer           :: real_spinup_met_flag,output_ef_file_flag
+   integer           :: diagnose_flag,output_gamma_flag
 
    character(3)      :: nlai='12'
    real              :: lai_scale_factor=0.1
@@ -104,7 +105,7 @@ program main
                      ef_file_path,output_path,&
                      met_files, pft_files, ef_file, lai_files,&
                      nlai,lai_scale_factor,run_co2,co2_file,&
-                     run_flower, run_litter,real_spinup_met,output_ef_file,output_gamma
+                     run_flower, run_litter,real_spinup_met,output_ef_file,output_gamma,diagnose
 
    call MPI_Init(ierr)
    call MPI_Comm_rank(MPI_COMM_WORLD, rank, ierr)
@@ -129,6 +130,7 @@ program main
    output_ef_file_flag  = flag2int(output_ef_file)
    run_co2_flag         = flag2int(run_co2)
    output_gamma_flag    = flag2int(output_gamma)
+   diagnose_flag        = flag2int(diagnose)
 
    if( iostat /= 0 ) then
      call safe_mpi_exit("megan: failed to read namelist",iostat)
@@ -166,6 +168,7 @@ program main
    call MPI_Bcast(real_spinup_met_flag, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
    call MPI_Bcast(output_ef_file_flag,  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
    call MPI_Bcast(output_gamma_flag,  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
+   call MPI_Bcast(diagnose_flag,  1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)   
    if (.not. allocated(lat)  ) allocate(lat(nlat))
    if (.not. allocated(lon)  ) allocate(lon(nlon))
    call MPI_Bcast(lat, nlat, MPI_REAL, 0, MPI_COMM_WORLD, ierr)
@@ -373,14 +376,19 @@ program main
              lai(:,:,laip_idx), lai(:,:,laic_idx),       & !LAI (past) [1], LAI (current) [1]
              ctf(:,:,1:6), ldf_in,                       & !Canopy type frac. [1],
              temp_max,temp_min,wind_max,                 & !max temp, min temp, max wind
-             temp24_avg,temp240_avg,ppfd24_avg,          & !daily avg of temp & ppfd
-             out_buffer,                                 &
-             run_flower_flag,run_litter_flag, run_co2_flag, co2_value,FillValue                  ) 
+             temp24_avg,temp240_avg,ppfd24_avg,ppfd240_avg,& !daily avg of temp & ppfd
+             out_buffer,                                   &
+             run_flower_flag,run_litter_flag,              &
+             run_co2_flag, co2_value,diagnose_flag,FillValue                  ) 
 
-      if(output_gamma_flag == 1)then 
-      out_buffer_emis(:,:,t_24,:) = out_buffer!*ef
+      if(diagnose_flag == 1)then
+         out_buffer_emis(:,:,t_24,:) = out_buffer
       else
-      out_buffer_emis(:,:,t_24,:) = out_buffer*ef
+         if(output_gamma_flag == 1)then 
+         out_buffer_emis(:,:,t_24,:) = out_buffer!*ef
+         else
+         out_buffer_emis(:,:,t_24,:) = out_buffer*ef
+         end if
       end if
       !==========test=================
       !out_buffer_emis(:,:,t_24,1) = temp
@@ -430,12 +438,18 @@ program main
          out_file = trim(output_path)//"/"//"Global_emis_MEGAN_" // yyyy // "-" // mm // "-" // dd // ".nc"
          if (rank .eq. 0)then
          cur_format_date = yyyy // "-" // mm // "-" // dd
-         call create_output_file(out_file,cur_format_date,nlat,nlon,lat,lon,output_gamma_flag)
+         call create_output_file(out_file,cur_format_date,nlat,nlon,lat,lon,output_gamma_flag,diagnose_flag)
          end if 
          do k = 1, nclass
+         if( diagnose_flag .eq. 1)then
+         call gather_output_3d(out_file,trim(mgn_diag_var(k)),out_buffer_emis(:,:,:,k),&
+                            ilen,  nlat, 24, &
+                            nlon, rank, nprocs,0)
+         else
          call gather_output_3d(out_file,trim(mgn_spc(k)),out_buffer_emis(:,:,:,k),&
                             ilen,  nlat, 24, &
                             nlon, rank, nprocs,output_gamma_flag)
+         end if
          end do 
          out_buffer_emis=0.0
       endif    
@@ -1529,13 +1543,16 @@ contains
    end subroutine create_output_ef_file
 
    !OUTPUT ----------------------------------------------------------------
-   subroutine create_output_file(out_file,current_date,nlat,nlon,lat,lon,output_gamma_flag)
+   subroutine create_output_file(out_file,current_date,&
+                                 nlat,nlon,lat,lon,&
+                                 output_gamma_flag,&
+                                 diagnose_flag)
      implicit none
      character(len=*), intent(in) :: out_file
      character(len=*), intent(in) :: current_date
      integer,          intent(in) :: nlat, nlon
      real, allocatable,intent(in) :: lat(:),lon(:)
-     integer,          intent(in) :: output_gamma_flag
+     integer,          intent(in) :: output_gamma_flag,diagnose_flag
    
      integer :: ncid, t_dim_id, x_dim_id, y_dim_id, str_dim_id
      integer :: var_id_lat, var_id_lon, var_id_area, var_id_time, k, t
@@ -1573,22 +1590,31 @@ contains
      call check(nf90_put_att(ncid, var_id_time, "standard_name", "time"))
    
      do k = 1, nclass
-       if( output_gamma_flag == 1) then
-       call check(nf90_def_var(ncid, trim(mgn_spc(k))//"_GAMMA", nf90_short, &
-                               [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
-       call check(nf90_put_att(ncid, var_id_mech(k), "units", "unit_less"))
-       call check(nf90_put_att(ncid, var_id_mech(k), "scale_factor", 0.01))
-       call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", 0))
-       call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
-                               trim(mgn_spc(k))//" gamma value"))
+       if(diagnose_flag == 1)then
+          call check(nf90_def_var(ncid, trim(mgn_diag_var(k)), nf90_float, &
+                                  [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
+          call check(nf90_put_att(ncid, var_id_mech(k), "_FillValue", FillValue))
+          call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", FillValue))
+          call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
+                                  trim(mgn_diag_var(k))//" for diagnose"))
        else
-       call check(nf90_def_var(ncid, trim(mgn_spc(k)), nf90_float, &
-                               [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
-       call check(nf90_put_att(ncid, var_id_mech(k), "units", "nmole m-2 s-1"))
-       call check(nf90_put_att(ncid, var_id_mech(k), "_FillValue", FillValue))
-       call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", FillValue))
-       call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
-                               trim(mgn_spc(k))//" emission rate"))
+          if( output_gamma_flag == 1) then
+          call check(nf90_def_var(ncid, trim(mgn_spc(k))//"_GAMMA", nf90_short, &
+                                  [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
+          call check(nf90_put_att(ncid, var_id_mech(k), "units", "unit_less"))
+          call check(nf90_put_att(ncid, var_id_mech(k), "scale_factor", 0.01))
+          call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", 0))
+          call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
+                                  trim(mgn_spc(k))//" gamma value"))
+          else
+          call check(nf90_def_var(ncid, trim(mgn_spc(k)), nf90_float, &
+                                  [x_dim_id, y_dim_id, t_dim_id], var_id_mech(k)))
+          call check(nf90_put_att(ncid, var_id_mech(k), "units", "nmole m-2 s-1"))
+          call check(nf90_put_att(ncid, var_id_mech(k), "_FillValue", FillValue))
+          call check(nf90_put_att(ncid, var_id_mech(k), "missing_value", FillValue))
+          call check(nf90_put_att(ncid, var_id_mech(k), "var_desc", &
+                                  trim(mgn_spc(k))//" emission rate"))
+          end if
        end if
      end do
    
