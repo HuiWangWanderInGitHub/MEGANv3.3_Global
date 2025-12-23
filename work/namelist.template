@@ -1,0 +1,27 @@
+&megan_nl
+  start_date='__START__',   ! YYYY-MM-DD HH:MM:SS
+  end_date  ='__END__',   ! YYYY-MM-DD HH:MM:SS
+
+  met_file_path = '/glade/campaign/univ/ucir0060/ERA5_land/unzip_era5land_2000-2020'
+  lai_file_path = '/glade/campaign/univ/ucir0060/LAI4g_Regridded_0.1deg'
+  pft_file_path = '/glade/campaign/univ/ucir0060/regridded_GF' 
+  ef_file_path = '/glade/campaign/univ/ucir0060/Regridded_0.1deg_EF' 
+  output_path   = '/glade/campaign/univ/ucir0060/Global_megan_output_2020' 
+  co2_file = "co2_mm_gl.csv"
+
+  met_files ='era5land_0.1degree_<time>.nc',            ! Meteo file path
+  pft_files ='ESACCI_GF_0.1_Degree_<time>.nc'
+  ef_file  ='Gridded_GR_EF.nc'
+  lai_files ='LAI4g_v1.2_0.1_Degree_<time>.nc'
+
+  nlai= '24',
+  lai_scale_factor = 0.1,
+
+  run_flower = .false.
+  run_litter = .false.
+  real_spinup_met = .true.
+  output_ef_file  = .false.
+  run_co2 = .true.
+  output_gamma = .true.
+  diagnose = .false.
+/
