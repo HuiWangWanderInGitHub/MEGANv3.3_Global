@@ -32,7 +32,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
              laip, laic,                                  &
              ctf, ldf_in,                                 & !lai,emis factors, light emis factors
              tmp_max, tmp_min, wind_max,                  &
-             tmp24_avg,tmp240_avg,ppfd24_avg,ppfd240_avg, & !meteo daily
+             tmp24_avg,tmp240_avg,ppfd96_avg,ppfd240_avg, & !meteo daily
              non_dimgarma,flower_flag,litter_flag,        &
              co2_flag, co2_value, diagnose_flag,fillvalue) !emis                           ) !out: Emision values
 
@@ -43,7 +43,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     real,    intent(in), dimension(ncols)         :: long
     real,    intent(in), dimension(nrows)         :: lat
     real,    intent(in), dimension(ncols,nrows)   :: temp, rad, wind, pres, qv, laip,laic
-    real,    intent(in), dimension(ncols,nrows)   :: tmp24_avg,tmp240_avg,ppfd24_avg,ppfd240_avg
+    real,    intent(in), dimension(ncols,nrows)   :: tmp24_avg,tmp240_avg,ppfd96_avg,ppfd240_avg
     real,    intent(in), dimension(ncols,nrows)   :: tmp_min,tmp_max,wind_max
 
     real,    intent(in)     :: ctf(ncols,nrows,nrtyp) !canopy type factor array
@@ -66,6 +66,8 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     real   :: TotalCT
     real   :: month,day,hour
     real   :: SinZenith, Zenith!Sinbeta, Beta
+    real :: elev_deg, elev_rad
+    real :: sin_elev, sin25
     real   :: Solar, Maxsolar,Eccentricity,    &
          Difffrac, PPFDfrac, QbAbsn,           &
          Trate, Qbeamv,Qdiffv, Qbeamn, Qdiffn, &
@@ -106,6 +108,8 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
     real  :: gamsm       ! EA response to soil moisture
     real  :: gamco2      ! EA response to CO2
     real  :: gamtp       ! combines GAMLD, GAMLI, GAMP to get canopy average
+    !adding new driving functions for acclimation and circadian control by Hui Wang, 2025/12/23, Merry Chrismas!
+    real  :: gamcir       ! 
     real  :: ldfmap      ! light depenedent fraction map
     !account for flower and litter emission as the relative emission factor
     real  :: gam_nonleaf       ! account for non-leaf emissions 
@@ -166,8 +170,21 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
            Solar    = rad(i,j)/2.25  !solar radiation   [W m-2]                (from meteo)
 
            !(1) calc solar angle
-           zenith      = CalcZenith(day,lat(j),hour)
-           SinZenith   = max(sin(25/57.29578), sin(zenith / 57.29578)) !57.29578=rad2deg
+           !zenith      = CalcZenith(day,lat(j),hour)
+           !SinZenith   = max(sin(25/57.29578), sin(zenith / 57.29578)) !57.29578=rad2deg
+           ! solar elevation angle (deg)
+           elev_deg = CalcZenith(day, lat(j), hour)
+           elev_rad = elev_deg /57.29578
+           
+           sin_elev = sin(elev_rad)
+           sin25    = sin(25.0 /57.29578)
+           
+           ! night = 0, daytime apply 25-degree lower bound
+           if (sin_elev <= 0.0) then
+               SinZenith = 0.0
+           else
+               SinZenith = max(sin25, sin_elev)
+           end if
            Eccentricity= CalcEccentricity(Day)
            Maxsolar    = SinZenith * SolarConstant * Eccentricity
 
@@ -249,6 +266,9 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
         else
         gamco2 = 1.0
         endif
+        ! EA response to circadian control
+        gamcir = gamma_cir(elev_deg)
+
 
         if (diagnose_flag == 1) then
         nloop = 1
@@ -280,9 +300,9 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
             do k = 1, layers
               Ea1L = CDEA(K) *                                                                       &
                      (GAMTLD(SunT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * &
-                     GAMP(SunP(k), ppfd24_avg(i,j),ppfd240_avg(i,j),1) * SunF(k) + &
+                     GAMP(SunP(k), ppfd96_avg(i,j),ppfd240_avg(i,j),1) * SunF(k) + &
                      GAMTLD(ShaT(k),tmp24_avg(i,j),tmp240_avg(i,j),S) * &
-                     GAMP(ShaP(k), ppfd24_avg(i,j),ppfd240_avg(i,j),0) * (1.0 - SunF(k) ))
+                     GAMP(ShaP(k), ppfd96_avg(i,j),ppfd240_avg(i,j),0) * (1.0 - SunF(k) ))
               SUM1 = SUM1 + Ea1L * VPGWT(K)
 
               Ea2L = GAMTLI(SunT(k),S) * SunF(k) + GAMTLI(ShaT(k),S) * (1.0-SunF(k))
@@ -291,7 +311,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
 
             GAMTP = SUM1*LDFMAP + SUM2*( 1.0-LDFMAP )
             ! ... Calculate emission activity factors
-            ER = LAIc(i,j) * GAMTP * GAMLA * GAMHW * GAMAQ * GAMHT * GAMLT * GAMSM
+            ER = LAIc(i,j) * GAMTP * GAMLA * GAMHW * GAMAQ * GAMHT * GAMLT * GAMSM * GAMCIR
 
             IF ( S .EQ. 1 ) THEN
                 ER =ER * GAMCO2  ! GAMCO2 only applied to isoprene
@@ -316,8 +336,8 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
                non_dimgarma(i,j,2) = GAMTP
                non_dimgarma(i,j,3) = GAMTLD(SunT(1),tmp24_avg(i,j),tmp240_avg(i,j),S)
                non_dimgarma(i,j,4) = GAMTLD(ShaT(1),tmp24_avg(i,j),tmp240_avg(i,j),S)
-               non_dimgarma(i,j,5) = GAMP(SunP(1), ppfd24_avg(i,j),ppfd240_avg(i,j),1)
-               non_dimgarma(i,j,6) = GAMP(ShaP(1), ppfd24_avg(i,j),ppfd240_avg(i,j),0)
+               non_dimgarma(i,j,5) = GAMP(SunP(1), ppfd96_avg(i,j),ppfd240_avg(i,j),1)
+               non_dimgarma(i,j,6) = GAMP(ShaP(1), ppfd96_avg(i,j),ppfd240_avg(i,j),0)
                non_dimgarma(i,j,7) = GAMLA
                non_dimgarma(i,j,8) = GAMCO2
                non_dimgarma(i,j,9) = SunT(1)
@@ -328,7 +348,7 @@ subroutine megan_voc(yyyy,ddd,hh,                         & !year,julian day,hou
                non_dimgarma(i,j,14) = tmp240_avg(i,j)
                non_dimgarma(i,j,15) = SunP(1)
                non_dimgarma(i,j,16) = ShaP(1)
-               non_dimgarma(i,j,17) = ppfd24_avg(i,j)
+               non_dimgarma(i,j,17) = ppfd96_avg(i,j)
                non_dimgarma(i,j,18) = ppfd240_avg(i,j)
                non_dimgarma(i,j,19) = LAIc(i,j)
        
@@ -403,8 +423,19 @@ contains
         REAL,PARAMETER :: Ct2 = 230
         INTEGER        :: S
         REAL           :: T1,T24,T240,Topt, X, Eopt, GAMTLD
-
-        !T240 = T24
+        REAL           :: DT, GAMDT
+        ! Hui Wang introduce new acclimation functions based on ML, 2025/12/25
+        REAL,PARAMETER :: L_1= 0.89, U_1= 1.2, k_1= 0.57, x0_1= 18.5!for T24
+        REAL,PARAMETER :: L_2= 0.84, U_2= 1.,   k_2= 1.42, x0_2= -3.5!for T240-T24 cold regime
+        REAL,PARAMETER :: L_3= 1.,   U_3= 1.09, k_3= 5.60, x0_3= 0.822!for T240-T24 warm regime
+ 
+        ! acclimation term, deltT (DT) = T240-T24
+        DT = T240-T24
+        IF (DT > 0) THEN
+            GAMDT = gompertz(DT,L_3,U_3,k_3,x0_3)
+        ELSE
+            GAMDT = gompertz(DT,L_2,U_2,k_2,x0_2)
+        END IF
 
         IF (T1 < 260.0) THEN
             GAMTLD = 0.0
@@ -413,7 +444,9 @@ contains
             Topt = 312.5 + 0.6 * (T240 - 297.0)
             X    = ((1.0 / Topt) - (1.0 / T1)) / 0.00831
             ! Maximum emission (relative to emission at 30 C)
-            Eopt = Cleo(S) * EXP(0.05 * (T24 - 297.0)) * Exp(0.05*(T240-297.0))
+            !Eopt = Cleo(S) * EXP(0.05 * (T24 - 297.0)) * Exp(0.05*(T240-297.0))
+            ! function gompertz(x, L, U, k, x0)
+            Eopt = Cleo(S) * GAMDT * gompertz((T24 - 273.15),L_1,U_1,k_1,x0_1)
 
             GAMTLD= Eopt * Ct2 * Exp(Ct1(S) * X) / (Ct2 - Ct1(S) * (1.0 - EXP(Ct2 * X)))
         ENDIF
@@ -432,26 +465,16 @@ contains
     !----------------------------------------------------------------
     ! EA Light response
     !----------------------------------------------------------------
-    function gamp(ppfd1,ppfd24,ppfd240,light_shd)
+    function gamp(ppfd1,ppfd96,ppfd240,light_shd)
         implicit none
-        real            :: ppfd1, ppfd24,ppfd240, alpha, c1, gamp
+        real,parameter  :: L= 0.89, U= 1.2, k= 0.03, x0= 480.!for PPFD96
+        real            :: ppfd1, ppfd96,ppfd240, alpha, c1, gamp
         integer         :: light_shd
-        IF (PPFD24 < 0.01) THEN
+        IF (PPFD96 < 0.01) THEN
             GAMP= 0.0
         ELSE
-            !Alpha  = 0.004
-            !-0.0005*log(ppfd240)
-            !C1 = 0.0374 * EXP(0.0005 * (PPFD24 - 240)) * (PPFD240** 0.6)
-            !if(light_shd == 1)then
-            !C1 = 0.0468 * EXP(0.0005 * (PPFD24 - 200)) * (PPFD240** 0.6)
-            !else
-            !C1 = 0.0468 * EXP(0.0005 * (PPFD24 - 50)) * (PPFD240** 0.6)
-            !end if
-            !C1 = 1.03
-            !Alpha  = 0.004 - 0.0005*log(ppfd24/2.)
-            !C1 = 0.048 * EXP(0.0005 * (PPFD24/2. - 240))*((PPFD24/2.)**0.6)
-            Alpha  = 0.004 - 0.0003*log(ppfd24/2.)
-            C1 = 0.0468 * EXP(0.0005 * (PPFD24/2. - 200))*((PPFD24/2.)**0.6)
+            Alpha  = 0.004 
+            C1 = 1.03* gompertz(ppfd96,L,U,k,x0)
                
             GAMP= (Alpha * C1 * PPFD1) / SQRT(1.0 + Alpha**2 * PPFD1**2)
         ENDIF
@@ -630,7 +653,19 @@ contains
          end if
     end function gamma_sm
     !======================================================================
-
+    !----------------------------------------------------------------
+    ! EA response to circadian control 
+    !----------------------------------------------------------------
+    real function gamma_cir(elev_deg) result(gamcir)
+        implicit none
+        ! input
+        real, intent(in) :: elev_deg
+        ! local / return
+        real, parameter :: L = 0.78, U = 1.2, k = 0.13, x0 = 30.0
+        ! for solar elevation angle (deg)
+    
+        gamcir = gompertz(elev_deg, L, U, k, x0)
+    end function gamma_cir
 
 !oooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
 ! MEGCAN FUNCTIONS:                                             o
@@ -652,6 +687,11 @@ FUNCTION CalcZenith(Day, Lat, Hour)
       A = SIN(Lat / Rpi180) * SinDelta
       B = COS(Lat / Rpi180) * Cosdelta
       SinZenith = A + B * COS(2 * PI * (Hour - 12) / 24)
+      IF (SinZenith > 1.0) THEN
+          SinZenith = 1.0
+      ELSE IF (SinZenith < -1.0) THEN
+          SinZenith = -1.0
+      END IF
       CalcZenith= ASIN(SinZenith) * Rpi180 !57.29578
 END FUNCTION CalcZenith
 !ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
@@ -1158,7 +1198,14 @@ function SvdTk(Tk)
       Svp = 10**((-2937.4 / Tk) - (4.9283 * LOG10(Tk)) + 23.5518)
       SvdTk = 0.2165 * Svp / Tk
 end function  SvdTk
+!ooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooooo
+! define gompertz function for acclimation parts
+real(kind=4) function gompertz(x, L, U, k, x0)
+    implicit none
+    real(kind=4), intent(in) :: x, L, U, k, x0
 
+    gompertz = L + (U - L) * exp( -exp( -k * (x - x0) ) )
+end function gompertz
 
 end subroutine megan_voc
 

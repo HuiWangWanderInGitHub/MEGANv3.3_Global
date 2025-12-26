@@ -19,7 +19,7 @@ program main
    integer :: iostat
    integer :: t,i,s,k,j!,k
    integer :: lai_num,laic_idx,laip_idx
-   integer :: t_24,t_240,t_total
+   integer :: t_24,t_240,t_96,t_total
 
    !date-time vars:
    character(4) ::  yyyy,current_year                           
@@ -53,9 +53,9 @@ program main
    character(256)                      :: out_file
    character(256)                      :: lai_file      !lai file
    real, allocatable, dimension(:,:)   :: temp_min,temp_max
-   real, allocatable, dimension(:,:)   :: wind_max,temp24_avg,ppfd24_avg
+   real, allocatable, dimension(:,:)   :: wind_max,temp24_avg,ppfd96_avg
    real, allocatable, dimension(:,:)   :: temp240_avg,ppfd240_avg
-   real, allocatable, dimension(:,:,:) :: temp24, ppfd24, wind24
+   real, allocatable, dimension(:,:,:) :: temp24, ppfd96, wind24
    real, allocatable, dimension(:,:,:) :: temp240,ppfd240
 
    !output vars:
@@ -205,7 +205,7 @@ program main
    allocate(   rh(ilen, nlat))
    !--- Allocate acclimation variables
    allocate( temp24(ilen, nlat, 24))
-   allocate( ppfd24(ilen, nlat, 24))
+   allocate( ppfd96(ilen, nlat, 96))
    allocate( wind24(ilen, nlat, 24))
    allocate( temp240(ilen, nlat, 240))
    allocate( ppfd240(ilen, nlat, 240))
@@ -214,7 +214,7 @@ program main
    allocate( temp_max(ilen, nlat))
    allocate( wind_max(ilen, nlat))
    allocate( temp24_avg(ilen, nlat))
-   allocate( ppfd24_avg(ilen, nlat))
+   allocate( ppfd96_avg(ilen, nlat))
    allocate( temp240_avg(ilen, nlat))
    allocate( ppfd240_avg(ilen, nlat))
   
@@ -227,11 +227,11 @@ program main
    out_buffer_emis=0.0
    temp=0.0  ;dtemp=0.0 ;u10=0.0; v10=0.0
    wind=0.0  ;pres=0.0  ;ppfd=0.0;rh=0.0
-   temp24=0.0;ppfd24=0.0;wind24=0.0
+   temp24=0.0;ppfd96=0.0;wind24=0.0
    temp240=0.0;ppfd240=0.0
    temp_min=0.0;temp_max=0.0
    wind_max=0.0;temp24_avg =0.0;temp240_avg=0.0
-   ppfd24_avg=0.0;ppfd240_avg=0.0
+   ppfd96_avg=0.0;ppfd240_avg=0.0
    lai = 0.0;ctf=0.0
    lon_local = lon(istart:iend) 
  
@@ -252,20 +252,21 @@ program main
    !====================================================
    !initialize variables
    t_24           =1
+   t_96           =1
    t_240          =1
    t_total        =1!total time step
    !====================================================
    if(real_spinup_met_flag .eq. 1) then
    call initiate_averaged_data(met_file,pmet_file,&
                                 ilen,nlat,nlon,current_date_s,&
-                                temp24,ppfd24,wind24,&
+                                temp24,ppfd96,wind24,&
                                 temp240,ppfd240,&
                                 temp_max,temp_min,wind_max,&
                                 temp24_avg,temp240_avg,&
-                                ppfd24_avg,ppfd240_avg,FillValue)
+                                ppfd96_avg,ppfd240_avg,FillValue)
    else
          temp24(:,:,:)  =288.0 !15deg Celsius (!CHECK VALUES!)
-         ppfd24(:,:,:)  =400.  !              (!CHECK VALUES!)
+         ppfd96(:,:,:)  =400.  !              (!CHECK VALUES!)
          temp240(:,:,:) =288.0 !15deg Celsius (!CHECK VALUES!)
          ppfd240(:,:,:) =400.  !              (!CHECK VALUES!)
          wind24(:,:,:)  =2.0   !              (!CHECK VALUES!)
@@ -275,7 +276,7 @@ program main
          temp_max(i,j)      = maxval(temp24(i,j,:))
          wind_max(i,j)      = maxval(wind24(i,j,:))
          temp24_avg(i,j)    = sum(temp24(i,j,:))/24.
-         ppfd24_avg(i,j)    = sum(ppfd24(i,j,:))/24.
+         ppfd96_avg(i,j)    = sum(ppfd96(i,j,:))/96.
          temp240_avg(i,j)   = sum(temp240(i,j,:))/240. !time_len
          ppfd240_avg(i,j)   = sum(ppfd240(i,j,:))/240. !time_len
          end do
@@ -357,9 +358,9 @@ program main
       call get_hourly_data(pmet_file,met_file, nlat, nlon, ilen,&
                               temp,dtemp,ppfd,pres,&
                               u10,v10,wind,rh,&
-                              temp24,ppfd24,wind24,&
+                              temp24,ppfd96,wind24,&
                               temp240,ppfd240,&
-                              t, t_24, t_240, hh)
+                              t, t_24,t_96, t_240, hh)
 
       !current/previous lai time index
       laip_idx = laiidx(ddd,lai_num)
@@ -376,7 +377,7 @@ program main
              lai(:,:,laip_idx), lai(:,:,laic_idx),       & !LAI (past) [1], LAI (current) [1]
              ctf(:,:,1:6), ldf_in,                       & !Canopy type frac. [1],
              temp_max,temp_min,wind_max,                 & !max temp, min temp, max wind
-             temp24_avg,temp240_avg,ppfd24_avg,ppfd240_avg,& !daily avg of temp & ppfd
+             temp24_avg,temp240_avg,ppfd96_avg,ppfd240_avg,& !daily avg of temp & ppfd
              out_buffer,                                   &
              run_flower_flag,run_litter_flag,              &
              run_co2_flag, co2_value,diagnose_flag,FillValue                  ) 
@@ -412,11 +413,11 @@ program main
       !out_buffer_emis(:,:,t_24,19) = ldf_in(:,:,2)
       !===============================
       call get_averaged_data(rank,nlat,ilen,t_total,&
-                                temp24,ppfd24,wind24,&
+                                temp24,ppfd96,wind24,&
                                 temp240,ppfd240,&
                                 temp_max,temp_min,wind_max,&
                                 temp24_avg,temp240_avg,&
-                                ppfd24_avg,ppfd240_avg)
+                                ppfd96_avg,ppfd240_avg)
       !----------------------                                                              ! run megan_nox 
       !soil NO model:
       !if ( run_bdsnp ) then
@@ -462,12 +463,17 @@ program main
       t_total = t_total + 1
       !long-term time_loop
       t_24  = t_24 + 1
+      t_96  = t_96 + 1
       t_240 = t_240 + 1
 
       if(t_24 .eq. 25) then
       t_24 = 1
       end if
 
+      if(t_96 .eq. 97) then
+      t_96 = 1
+      end if
+      
       if(t_240 .eq. 241) then
       t_240 = 1
       end if
@@ -752,9 +758,9 @@ contains
    subroutine get_hourly_data(pmet_file,met_file, nlat, nlon, ilen,&
                               temp,dtemp,ppfd,pres,&
                               u10,v10,wind,rh,&
-                              temp24,ppfd24,wind24,&
+                              temp24,ppfd96,wind24,&
                               temp240,ppfd240,&
-                               t, t_24, t_240, hh)
+                               t, t_24,t_96, t_240, hh)
      use netcdf
      use mpi
      implicit none
@@ -762,10 +768,10 @@ contains
      character(len=256), intent(in) :: met_file,pmet_file
      character(len=2),   intent(in) :: hh
      integer, intent(in)            :: nlat, nlon, ilen, t
-     integer, intent(inout)         :: t_24, t_240
+     integer, intent(inout)         :: t_24,t_96, t_240
      real, intent(inout) :: temp(:,:),dtemp(:,:),u10(:,:),v10(:,:)
      real, intent(inout) :: wind(:,:),pres(:,:),ppfd(:,:),rh(:,:)
-     real, intent(inout) :: temp24(:,:,:), ppfd24(:,:,:),wind24(:,:,:)
+     real, intent(inout) :: temp24(:,:,:), ppfd96(:,:,:),wind24(:,:,:)
      real, intent(inout) :: temp240(:,:,:),ppfd240(:,:,:)
    
      !real,    allocatable :: temp_all(:,:), dtemp_all(:,:)
@@ -897,7 +903,7 @@ contains
      !           exp((17.625*(temp  - 273.15))/(243.04 + (temp  - 273.15)))
      !calculate relative humidity based on T2 and DT2
      temp24(:,:,t_24) = temp
-     ppfd24(:,:,t_24) = ppfd
+     ppfd96(:,:,t_96) = ppfd
      wind24(:,:,t_24) = wind
      
      temp240(:,:,t_240) = temp
@@ -915,22 +921,22 @@ contains
 !-----------------------------------------------------------------
    subroutine initiate_averaged_data(cmet_file,pmet_file,&
                                 ilen,nlat,nlon,current_date_s,&
-                                temp24,ppfd24,wind24,&
+                                temp24,ppfd96,wind24,&
                                 temp240,ppfd240,&
                                 temp_max,temp_min,wind_max,&
                                 temp24_avg,temp240_avg,&
-                                ppfd24_avg,ppfd240_avg, FillValue)
+                                ppfd96_avg,ppfd240_avg, FillValue)
      use datetime_module, only: datetime, timedelta, strptime!, secondsSinceEpoch
      implicit none
      character(len=256), intent(in) :: cmet_file,pmet_file
      integer,            intent(in) :: ilen,nlat,nlon
      type(datetime),     intent(in) :: current_date_s
      real, intent(in)            :: FillValue
-     real, intent(inout) :: temp24(:,:,:), ppfd24(:,:,:),wind24(:,:,:)
+     real, intent(inout) :: temp24(:,:,:), ppfd96(:,:,:),wind24(:,:,:)
      real, intent(inout) :: temp240(:,:,:),ppfd240(:,:,:)
      real, intent(inout) :: temp_max(:,:),temp_min(:,:),wind_max(:,:)
      real, intent(inout) :: temp24_avg(:,:),temp240_avg(:,:)
-     real, intent(inout) :: ppfd24_avg(:,:),ppfd240_avg(:,:)
+     real, intent(inout) :: ppfd96_avg(:,:),ppfd240_avg(:,:)
      
      
      real,  allocatable  :: ppfd_t1(:,:),ppfd_t2(:,:),data_all(:,:)
@@ -1060,7 +1066,7 @@ contains
      deallocate( ppfd_t1)
      end if 
      temp24 = temp240(:,:,217:240)
-     ppfd24 = ppfd240(:,:,217:240)
+     ppfd96 = ppfd240(:,:,145:240)
  
      do i=1,ilen
      do j=1,nlat
@@ -1069,7 +1075,7 @@ contains
          temp_max(i,j)      = maxval(temp24(i,j,:))
          wind_max(i,j)      = maxval(wind24(i,j,:))
          temp24_avg(i,j)    = sum(temp24(i,j,:))/24.
-         ppfd24_avg(i,j)    = sum(ppfd24(i,j,:))/24.
+         ppfd96_avg(i,j)    = sum(ppfd96(i,j,:))/96.
          temp240_avg(i,j)   = sum(temp240(i,j,:))/240. !time_len
          ppfd240_avg(i,j)   = sum(ppfd240(i,j,:))/240. !time_len
          else
@@ -1077,7 +1083,7 @@ contains
          temp_max(i,j)      = FillValue!maxval(temp24(i,j,:))
          wind_max(i,j)      = FillValue!maxval(wind24(i,j,:))
          temp24_avg(i,j)    = FillValue!sum(temp24(i,j,:))/24.
-         ppfd24_avg(i,j)    = FillValue!sum(ppfd24(i,j,:))/24.
+         ppfd96_avg(i,j)    = FillValue!sum(ppfd24(i,j,:))/24.
          temp240_avg(i,j)   = FillValue!sum(temp24(i,j,:))/24.
          ppfd240_avg(i,j)   = FillValue!sum(ppfd24(i,j,:))/24.
          end if
@@ -1087,22 +1093,22 @@ contains
       
 !-----------------------------------------------------------------
    subroutine get_averaged_data(rank,nlat,nlon,t_total,&
-                                temp24,ppfd24,wind24,&
+                                temp24,ppfd96,wind24,&
                                 temp240,ppfd240,&
                                 temp_max,temp_min,wind_max,&
                                 temp24_avg,temp240_avg,&
-                                ppfd24_avg,ppfd240_avg)
+                                ppfd96_avg,ppfd240_avg)
       implicit none
       !character(len=3),intent(in) :: ddd                      
       !integer ::ncid,var_id
       integer, intent(in) :: rank
       integer, intent(in) :: nlat,nlon
       integer, intent(in) :: t_total
-      real, intent(in) :: temp24(:,:,:),ppfd24(:,:,:),wind24(:,:,:)
+      real, intent(in) :: temp24(:,:,:),ppfd96(:,:,:),wind24(:,:,:)
       real, intent(in) :: temp240(:,:,:),ppfd240(:,:,:)
       real, intent(inout) :: temp_max(:,:),temp_min(:,:),wind_max(:,:)
       real, intent(inout) :: temp24_avg(:,:),temp240_avg(:,:)
-      real, intent(inout) :: ppfd24_avg(:,:),ppfd240_avg(:,:)
+      real, intent(inout) :: ppfd96_avg(:,:),ppfd240_avg(:,:)
       !integer ::t_24
       integer :: i,j 
       
@@ -1125,7 +1131,7 @@ contains
                temp_max(i,j)      = maxval(temp24(i,j,:))
                wind_max(i,j)      = maxval(wind24(i,j,:))
                temp24_avg(i,j)    = sum(temp24(i,j,:))/24.
-               ppfd24_avg(i,j)    = sum(ppfd24(i,j,:))/24.
+               ppfd96_avg(i,j)    = sum(ppfd96(i,j,:))/96.
                temp240_avg(i,j)  = sum(temp240(i,j,:))/240. !time_len
                ppfd240_avg(i,j)  = sum(ppfd240(i,j,:))/240. !time_len
                else
@@ -1133,7 +1139,7 @@ contains
                temp_max(i,j)      = FillValue!maxval(temp24(i,j,:))
                wind_max(i,j)      = FillValue!maxval(wind24(i,j,:))
                temp24_avg(i,j)    = FillValue!sum(temp24(i,j,:))/24.
-               ppfd24_avg(i,j)    = FillValue!sum(ppfd24(i,j,:))/24.
+               ppfd96_avg(i,j)    = FillValue!sum(ppfd24(i,j,:))/24.
                temp240_avg(i,j)    = FillValue!sum(temp24(i,j,:))/24.
                ppfd240_avg(i,j)    = FillValue!sum(ppfd24(i,j,:))/24.
                end if
